@@ -1,9 +1,0 @@
-name: AnarchyPvP
-version: 1.0.2
-main: kz.anarchy.pvp.Main
-api-version: "1.21"
-description: Жартылай анархия сервері үшін PvP Combat Tag жүйесі
-authors: [ QobaMn ]
-
-commands: {}
-permissions: {}
