@@ -11,27 +11,27 @@ public class Main extends JavaPlugin {
     @Override
     public void onEnable() {
         instance = this;
-
-        // Config жүктеу
         configManager = new ConfigManager(this);
-        configManager.load();
-
-        // Manager және Listener инициализациясы
         pvpManager = new PvPManager(this);
         getServer().getPluginManager().registerEvents(new PvPListener(pvpManager), this);
-
-        getLogger().info("╔══════════════════════════════╗");
-        getLogger().info("║     AnarchyPvP  ҚОСЫЛДЫ     ║");
-        getLogger().info("╚══════════════════════════════╝");
+        getLogger().info("     AnarchyPvP  қосылды     ");
     }
 
     @Override
     public void onDisable() {
         pvpManager.clearAll();
-        getLogger().info("AnarchyPvP өшірілді.");
+        getLogger().info("AnarchyPvP өшірілді");
     }
 
-    public static Main getInstance()         { return instance; }
-    public ConfigManager getConfigManager()  { return configManager; }
-    public PvPManager getPvPManager()        { return pvpManager; }
+    public static Main getInstance() {
+        return instance;
+    }
+
+    public ConfigManager getConfigManager() {
+        return configManager;
+    }
+
+    public PvPManager getPvpManager() {
+        return pvpManager;
+    }
 }

@@ -7,13 +7,18 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
-import org.bukkit.event.player.PlayerCommandPreprocessEvent;
-import org.bukkit.event.player.PlayerPortalEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.event.player.PlayerTeleportEvent;
+import org.bukkit.event.player.*;
 import org.bukkit.projectiles.ProjectileSource;
 
 public class PvPListener implements Listener {
+
+    /**
+     * Бұл рұқсаты бар ойыншылар:
+     *  1) PvP кезінде ойыннан шықса заттарын жоғалтпайды
+     *  2) PvP кезінде барлық командаларды қолдана алады
+     *  3) Олардың команда арқылы PvP ойыншыны телепорт ете алады
+     */
+    private static final String OWNER_PERM = "anarchypvp.owner.allow";
 
     private final PvPManager manager;
 
@@ -21,7 +26,7 @@ public class PvPListener implements Listener {
         this.manager = manager;
     }
 
-    // ── Зиян тигізу ──────────────────────────────────────────────────────
+    // ── Зақым тигізу → PvP тег ───────────────────────────────────────────────
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityDamage(EntityDamageByEntityEvent event) {
@@ -35,27 +40,31 @@ public class PvPListener implements Listener {
     }
 
     private Player resolveAttacker(EntityDamageByEntityEvent event) {
-        if (event.getDamager() instanceof Player player) {
-            return player;
-        }
-        if (event.getDamager() instanceof Projectile projectile) {
-            ProjectileSource shooter = projectile.getShooter();
-            if (shooter instanceof Player player) return player;
+        if (event.getDamager() instanceof Player p) return p;
+        if (event.getDamager() instanceof Projectile proj) {
+            ProjectileSource shooter = proj.getShooter();
+            if (shooter instanceof Player p) return p;
         }
         return null;
     }
 
-    // ── Серверден шығу ────────────────────────────────────────────────────
+    // ── Ойыннан шығу → logout өңдеу ──────────────────────────────────────────
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
-        if (manager.isInPvP(player)) {
-            manager.handleLogout(player);
-        }
+        if (!manager.isInPvP(player)) return;
+
+        /*
+         * FIX 1: anarchypvp.owner.allow рұқсаты бар ойыншы шықса
+         *         заттары жерге түспейді (dropItems = false).
+         *         Қалыпты ойыншыларда заттар түседі (dropItems = true).
+         */
+        boolean dropItems = !player.hasPermission(OWNER_PERM);
+        manager.handleLogout(player, dropItems);
     }
 
-    // ── Ойыншы өлімі ─────────────────────────────────────────────────────
+    // ── Өлім → PvP аяқтау ────────────────────────────────────────────────────
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onPlayerDeath(PlayerDeathEvent event) {
@@ -64,57 +73,83 @@ public class PvPListener implements Listener {
 
         Player killer = event.getEntity().getKiller();
         if (killer != null && killer.isOnline()) {
-            killer.sendMessage(
-                    ConfigManager.color("&aSіз §f" + player.getName() + " §aойыншысын жеңдіңіз!")
-            );
+            String msg = Main.getInstance().getConfigManager().getMsgPvpEnd()
+                    + " §7(§f" + killer.getName() + "§7 жеңді)";
+            player.sendMessage(msg);
         }
 
         manager.exitPvP(player, true);
     }
 
-    // ── Команда тексеру ───────────────────────────────────────────────────
+    // ── Команда блоктау ───────────────────────────────────────────────────────
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onCommand(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();
         if (!manager.isInPvP(player)) return;
 
+        /*
+         * FIX 2: anarchypvp.owner.allow рұқсаты бар ойыншыларға
+         *         PvP кезінде барлық командалар рұқсат етілген.
+         */
+        if (player.hasPermission(OWNER_PERM)) return;
+
         String cmdLower = event.getMessage().toLowerCase();
         for (String allowed : Main.getInstance().getConfigManager().getAllowedCommands()) {
-            if (cmdLower.startsWith(allowed.toLowerCase())) return;
+            // Нақты команда немесе аргументпен бастауын тексеру
+            if (cmdLower.equals(allowed.toLowerCase()) ||
+                cmdLower.startsWith(allowed.toLowerCase() + " ")) {
+                return;
+            }
         }
 
         event.setCancelled(true);
         player.sendMessage(Main.getInstance().getConfigManager().getMsgCommandBlocked());
     }
 
-    // ── Портал тексеру ────────────────────────────────────────────────────
+    // ── Портал блоктау ────────────────────────────────────────────────────────
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onPortal(PlayerPortalEvent event) {
         Player player = event.getPlayer();
         if (!manager.isInPvP(player)) return;
+        if (player.hasPermission(OWNER_PERM)) return;
 
         event.setCancelled(true);
         player.sendMessage(Main.getInstance().getConfigManager().getMsgPortalBlocked());
     }
 
-    // ── Телепорт тексеру ─────────────────────────────────────────────────
+    // ── Телепорт блоктау ──────────────────────────────────────────────────────
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onTeleport(PlayerTeleportEvent event) {
         Player player = event.getPlayer();
         if (!manager.isInPvP(player)) return;
+        if (player.hasPermission(OWNER_PERM)) return;
 
         PlayerTeleportEvent.TeleportCause cause = event.getCause();
-        if (cause == PlayerTeleportEvent.TeleportCause.COMMAND
-                || cause == PlayerTeleportEvent.TeleportCause.PLUGIN
-                || cause == PlayerTeleportEvent.TeleportCause.NETHER_PORTAL
-                || cause == PlayerTeleportEvent.TeleportCause.END_PORTAL
-                || cause == PlayerTeleportEvent.TeleportCause.END_GATEWAY) {
 
-            event.setCancelled(true);
-            player.sendMessage(Main.getInstance().getConfigManager().getMsgTeleportBlocked());
+        /*
+         * FIX 3: COMMAND және PLUGIN себептерін блоктамаймыз.
+         *
+         * Логика:
+         *  - Егер ойыншының өзі команда терсе → onCommand оны бұрыннан блоктайды,
+         *    сондықтан PlayerTeleportEvent мүлде іске қосылмайды.
+         *  - Егер PlayerTeleportEvent(COMMAND/PLUGIN) іске қосылса, бұл дегеніміз
+         *    ADMIN команда берді (мысалы /tp arman MEN) → рұқсат береміз.
+         *
+         * Тек портал арқылы өту блокталады:
+         */
+        switch (cause) {
+            case NETHER_PORTAL:
+            case END_PORTAL:
+            case END_GATEWAY:
+                event.setCancelled(true);
+                player.sendMessage(Main.getInstance().getConfigManager().getMsgTeleportBlocked());
+                break;
+            default:
+                // COMMAND, PLUGIN, UNKNOWN — рұқсат (admin телепорты)
+                break;
         }
     }
 }
